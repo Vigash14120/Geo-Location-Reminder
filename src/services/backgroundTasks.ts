@@ -1,9 +1,8 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import { storageService } from './storage';
-import { getHaversineDistance, isWithinTimeRange } from '../utils/geo';
 import { notificationService } from './notifications';
-import { Reminder } from '../types';
+import { runDecisionEngine } from '../engine';
 
 export const LOCATION_TASK_NAME = 'background-location-task';
 
@@ -14,47 +13,21 @@ export async function evaluateRemindersAtLocation(coords: {
   latitude: number;
   longitude: number;
   altitude?: number | null;
+  accuracy?: number | null;
+  timestamp?: number;
 }): Promise<void> {
-  const { latitude, longitude, altitude } = coords;
-  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
-    return;
+  const [reminders, runtime, stats, settings] = await Promise.all([
+    storageService.getReminders(),
+    storageService.getRuntime(),
+    storageService.getStats(),
+    storageService.getSettings(),
+  ]);
+  const result = runDecisionEngine({ reminders, runtime, stats, settings, location: coords });
+  for (const action of result.actions) {
+    await notificationService.sendReminderNotification(action.reminder);
+    await storageService.updateReminder({ ...action.reminder, isTriggered: true });
   }
-
-  const reminders = await storageService.getReminders();
-  const activeReminders = reminders.filter((r) => r.isEnabled && !r.isTriggered);
-
-  for (const reminder of activeReminders) {
-    const distance = getHaversineDistance(
-      { latitude, longitude },
-      { latitude: reminder.location.latitude, longitude: reminder.location.longitude }
-    );
-
-    let altitudeOk = true;
-    if (
-      reminder.location.altitude !== undefined &&
-      !isNaN(reminder.location.altitude) &&
-      altitude !== null &&
-      altitude !== undefined &&
-      !isNaN(altitude)
-    ) {
-      const altDist = Math.abs(altitude - reminder.location.altitude);
-      altitudeOk = altDist <= (reminder.altitudeThreshold || 10);
-    }
-
-    let timeOk = true;
-    if (reminder.timeConditions?.startTime && reminder.timeConditions?.endTime) {
-      timeOk = isWithinTimeRange(reminder.timeConditions.startTime, reminder.timeConditions.endTime);
-    }
-
-    if (distance <= reminder.radius && altitudeOk && timeOk) {
-      // Trigger notification
-      await notificationService.sendReminderNotification(reminder);
-
-      // Mark as triggered to avoid repeating notification
-      reminder.isTriggered = true;
-      await storageService.updateReminder(reminder);
-    }
-  }
+  await Promise.all([storageService.saveRuntime(result.runtime), storageService.saveStats(result.stats)]);
 }
 
 export const backgroundTaskService = {

@@ -4,7 +4,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import HomeScreen from '../screens/HomeScreen';
 import AddReminderScreen from '../screens/AddReminderScreen';
 import HistoryScreen from '../screens/HistoryScreen';
-import { MapPin, History, PlusSquare } from 'lucide-react-native';
+import SettingsScreen from '../screens/SettingsScreen';
+import { MapPin, History, Settings } from 'lucide-react-native';
 
 export type RootStackParamList = {
   Main: undefined;
@@ -14,6 +15,7 @@ export type RootStackParamList = {
 export type TabParamList = {
   Home: undefined;
   History: undefined;
+  Settings: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -52,6 +54,14 @@ const TabNavigator = () => {
         options={{
           tabBarLabel: 'History',
           tabBarIcon: ({ color, size }) => <History size={size} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{
+          tabBarLabel: 'Settings',
+          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
         }}
       />
     </Tab.Navigator>
