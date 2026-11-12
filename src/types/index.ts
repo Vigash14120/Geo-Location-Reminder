@@ -19,3 +19,28 @@ export interface Reminder {
   altitudeThreshold?: number; // Altitude match threshold in meters
   createdAt: number;
 }
+
+export interface EngineSettings {
+  enabled: boolean;
+  minimumScore: number;
+  cooldownMs: number;
+  maxTriggersPerRun: number;
+  locationAccuracyMeters: number;
+}
+
+export interface ReminderRuntimeState {
+  lastEvaluatedAt?: number;
+  lastTriggeredAt?: number;
+  lastDistanceMeters?: number;
+  lastDecision?: 'triggered' | 'skipped' | 'ineligible';
+}
+
+export type ReminderRuntimeStateMap = Record<string, ReminderRuntimeState>;
+
+export interface EngineStats {
+  evaluations: number;
+  eligibleEvaluations: number;
+  triggered: number;
+  skipped: number;
+  lastRunAt?: number;
+}
