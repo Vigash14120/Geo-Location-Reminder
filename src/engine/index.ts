@@ -30,6 +30,18 @@ export function runDecisionEngine(input: EngineInput): EngineOutput {
 
   const evaluations = input.reminders.map((reminder) =>
     evaluateReminder(reminder, location, settings.locationAccuracyMeters, input.now));
+  if (!Number.isFinite(location.accuracy) || location.accuracy > settings.locationAccuracyMeters) {
+    return {
+      actions: [],
+      evaluations,
+      runtime: input.runtime,
+      stats: {
+        ...input.stats,
+        rejectedSamples: input.stats.rejectedSamples + 1,
+        lastRunAt: input.now,
+      },
+    };
+  }
   const ranked = rankEligibleEvaluations(evaluations, settings);
   const rankedIds = new Set(ranked.map((evaluation) => evaluation.reminder.id));
   const ordered = [...ranked, ...evaluations.filter((evaluation) => !rankedIds.has(evaluation.reminder.id))];

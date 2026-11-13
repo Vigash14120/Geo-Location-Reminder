@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_ENGINE_SETTINGS, normalizeLocation, runDecisionEngine } from '../src/engine';
+import { DEFAULT_ENGINE_SETTINGS, runDecisionEngine } from '../src/engine';
 import { migrateReminderData } from '../src/services/storage';
 import { Reminder } from '../src/types';
 
@@ -23,21 +23,29 @@ const baseInput = {
   settings: DEFAULT_ENGINE_SETTINGS,
 };
 
-test('triggers an eligible nearby reminder', () => {
-  const result = runDecisionEngine({
-    ...baseInput,
-    location: { latitude: 0, longitude: 0, accuracy: 5 },
-    now: 1000,
-  });
-  assert.equal(result.actions.length, 1);
-  assert.equal(result.stats.triggered, 1);
-  assert.equal(result.runtime.nearby.lastDecision, 'triggered');
+function sample(now: number, overrides: Record<string, number> = {}) {
+  return {
+    latitude: 0,
+    longitude: 0,
+    accuracy: 5,
+    timestamp: now,
+    ...overrides,
+  };
+}
+
+test('requires consecutive good readings before triggering', () => {
+  const first = runDecisionEngine({ ...baseInput, location: sample(1000), now: 1000 });
+  assert.equal(first.actions.length, 0);
+  assert.equal(first.runtime.nearby.consecutiveInside, 1);
+  const second = runDecisionEngine({ ...baseInput, runtime: first.runtime, location: sample(1001), now: 1001 });
+  assert.equal(second.actions.length, 1);
+  assert.equal(second.runtime.nearby.consecutiveInside, 2);
 });
 
 test('does not trigger outside the radius', () => {
   const result = runDecisionEngine({
     ...baseInput,
-    location: { latitude: 1, longitude: 1, accuracy: 5 },
+    location: sample(2000, { latitude: 1, longitude: 1 }),
     now: 2000,
   });
   assert.equal(result.actions.length, 0);
@@ -45,16 +53,13 @@ test('does not trigger outside the radius', () => {
 });
 
 test('honors the cooldown window', () => {
-  const first = runDecisionEngine({
-    ...baseInput,
-    location: { latitude: 0, longitude: 0, accuracy: 5 },
-    now: 1000,
-  });
+  const first = runDecisionEngine({ ...baseInput, location: sample(1000), now: 1000 });
+  const triggered = runDecisionEngine({ ...baseInput, runtime: first.runtime, location: sample(1001), now: 1001 });
   const second = runDecisionEngine({
     ...baseInput,
-    runtime: first.runtime,
-    location: { latitude: 0, longitude: 0, accuracy: 5 },
-    now: 1001,
+    runtime: triggered.runtime,
+    location: sample(1002),
+    now: 1002,
   });
   assert.equal(second.actions.length, 0);
   assert.equal(second.runtime.nearby.lastDecision, 'skipped');
@@ -62,12 +67,19 @@ test('honors the cooldown window', () => {
 
 test('suppresses over-limit reminders without marking them triggered', () => {
   const reminders = [0, 1, 2, 3].map((id) => ({ ...reminder, id: String(id) }));
+  const first = runDecisionEngine({
+    ...baseInput,
+    reminders,
+    location: sample(1000),
+    now: 1000,
+  });
   const result = runDecisionEngine({
     ...baseInput,
     reminders,
+    runtime: first.runtime,
     settings: { ...DEFAULT_ENGINE_SETTINGS, maxTriggersPerRun: 2 },
-    location: { latitude: 0, longitude: 0, accuracy: 5 },
-    now: 1000,
+    location: sample(1001),
+    now: 1001,
   });
   assert.equal(result.actions.length, 2);
   assert.equal(result.stats.triggered, 2);
@@ -75,14 +87,70 @@ test('suppresses over-limit reminders without marking them triggered', () => {
   assert.equal(result.runtime['2'].lastTriggeredAt, undefined);
 });
 
-test('reports unknown accuracy separately', () => {
+test('reports unknown accuracy without changing runtime', () => {
   const result = runDecisionEngine({
     ...baseInput,
     location: { latitude: 0, longitude: 0 },
     now: 1000,
   });
   assert.ok(result.evaluations[0].reasons.includes('location-accuracy-unknown'));
-  assert.ok(!result.evaluations[0].reasons.includes('location-inaccurate'));
+  assert.deepEqual(result.runtime, {});
+  assert.equal(result.stats.rejectedSamples, 1);
+});
+
+test('poor accuracy does not change inside state', () => {
+  const first = runDecisionEngine({ ...baseInput, location: sample(1000), now: 1000 });
+  const rejected = runDecisionEngine({
+    ...baseInput,
+    runtime: first.runtime,
+    location: sample(1001, { accuracy: 1000 }),
+    now: 1001,
+  });
+  assert.deepEqual(rejected.runtime, first.runtime);
+  assert.equal(rejected.stats.rejectedSamples, 1);
+});
+
+test('hysteresis keeps a reminder inside until the exit threshold', () => {
+  const first = runDecisionEngine({ ...baseInput, location: sample(1000), now: 1000 });
+  const second = runDecisionEngine({ ...baseInput, runtime: first.runtime, location: sample(1001), now: 1001 });
+  const nearBoundary = runDecisionEngine({
+    ...baseInput,
+    runtime: second.runtime,
+    location: sample(1002, { latitude: 0.00095 }),
+    now: 1002,
+  });
+  assert.equal(nearBoundary.runtime.nearby.inside, true);
+  const outside = runDecisionEngine({
+    ...baseInput,
+    runtime: nearBoundary.runtime,
+    location: sample(1003, { latitude: 0.0015 }),
+    now: 1003,
+  });
+  assert.equal(outside.runtime.nearby.inside, false);
+  assert.equal(outside.runtime.nearby.consecutiveInside, 0);
+});
+
+test('dwell timer resets after leaving the geofence', () => {
+  const dwellReminder = { ...reminder, dwellSeconds: 10 };
+  const first = runDecisionEngine({ ...baseInput, reminders: [dwellReminder], location: sample(1000), now: 1000 });
+  const second = runDecisionEngine({ ...baseInput, reminders: [dwellReminder], runtime: first.runtime, location: sample(1001), now: 1001 });
+  const left = runDecisionEngine({
+    ...baseInput,
+    reminders: [dwellReminder],
+    runtime: second.runtime,
+    location: sample(1002, { latitude: 0.002 }),
+    now: 1002,
+  });
+  assert.equal(left.runtime.nearby.enteredAt, undefined);
+  assert.equal(left.runtime.nearby.consecutiveInside, 0);
+  const reentered = runDecisionEngine({
+    ...baseInput,
+    reminders: [dwellReminder],
+    runtime: left.runtime,
+    location: sample(1003),
+    now: 1003,
+  });
+  assert.equal(reentered.actions.length, 0);
 });
 
 test('normalizes missing reminder fields during migration', () => {
@@ -105,9 +173,6 @@ test('normalizes missing reminder fields during migration', () => {
 });
 
 test('migration is idempotent for versioned data', () => {
-  const raw = JSON.stringify({
-    schemaVersion: 2,
-    reminders: [{ ...reminder, dwellSeconds: 5 }],
-  });
+  const raw = JSON.stringify({ schemaVersion: 2, reminders: [{ ...reminder, dwellSeconds: 5 }] });
   assert.deepEqual(migrateReminderData(raw), migrateReminderData(JSON.stringify(migrateReminderData(raw))));
 });

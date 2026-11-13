@@ -33,6 +33,9 @@ export interface EngineSettings {
 }
 
 export interface ReminderRuntimeState {
+  inside: boolean;
+  enteredAt?: number;
+  consecutiveInside: number;
   lastEvaluatedAt?: number;
   lastTriggeredAt?: number;
   lastDistanceMeters?: number;

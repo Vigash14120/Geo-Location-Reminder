@@ -18,16 +18,40 @@ export function applyDecisions(
   const actions: EngineAction[] = [];
 
   for (const evaluation of evaluations) {
-    const previous = nextRuntime[evaluation.reminder.id];
+    const previous = nextRuntime[evaluation.reminder.id] ?? {
+      inside: false,
+      consecutiveInside: 0,
+    };
+    const wasInside = previous.inside;
+    const enterRadius = evaluation.reminder.radius;
+    const exitRadius = enterRadius * settings.exitFactor;
+    const inside = wasInside
+      ? evaluation.distanceMeters <= exitRadius
+      : evaluation.distanceMeters <= enterRadius;
+    const consecutiveInside = inside ? previous.consecutiveInside + 1 : 0;
+    const enteredAt = inside
+      ? previous.enteredAt ?? (consecutiveInside >= settings.requiredConsecutiveReadings ? now : undefined)
+      : undefined;
+    const eligibleWithoutRadius = evaluation.reasons.every((reason) => reason !== 'outside-radius');
     const inCooldown = previous?.lastTriggeredAt !== undefined &&
       now - previous.lastTriggeredAt < settings.cooldownMs;
-    const shouldTrigger = evaluation.eligible && evaluation.score >= settings.minimumScore && !inCooldown;
+    const dwellSeconds = evaluation.reminder.dwellSeconds ?? 0;
+    const dwellElapsed = enteredAt !== undefined && (now - enteredAt) >= dwellSeconds * 1000;
+    const shouldTrigger = inside &&
+      eligibleWithoutRadius &&
+      consecutiveInside >= settings.requiredConsecutiveReadings &&
+      dwellElapsed &&
+      evaluation.score >= settings.minimumScore &&
+      !inCooldown;
     const canTrigger = shouldTrigger && actions.length < settings.maxTriggersPerRun;
     nextRuntime[evaluation.reminder.id] = {
       ...previous,
+      inside,
+      enteredAt,
+      consecutiveInside,
       lastEvaluatedAt: now,
       lastDistanceMeters: evaluation.distanceMeters,
-      lastDecision: canTrigger ? 'triggered' : evaluation.eligible ? 'skipped' : 'ineligible',
+      lastDecision: canTrigger ? 'triggered' : shouldTrigger ? 'skipped' : evaluation.eligible ? 'skipped' : 'ineligible',
       ...(canTrigger ? { lastTriggeredAt: now } : {}),
     };
     if (canTrigger) {

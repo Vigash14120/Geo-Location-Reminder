@@ -37,6 +37,17 @@ export function normalizeReminder(
   };
 }
 
+function normalizeRuntime(runtime: ReminderRuntimeStateMap): ReminderRuntimeStateMap {
+  return Object.fromEntries(Object.entries(runtime).map(([id, state]) => [
+    id,
+    {
+      ...state,
+      inside: state.inside ?? false,
+      consecutiveInside: state.consecutiveInside ?? 0,
+    },
+  ]));
+}
+
 export function migrateReminderData(raw: string | null): { schemaVersion: number; reminders: Reminder[] } {
   if (!raw) return { schemaVersion: SCHEMA_VERSION, reminders: [] };
   const parsed = JSON.parse(raw) as Reminder[] | { schemaVersion?: number; reminders?: Reminder[] };
@@ -136,7 +147,7 @@ export const storageService = {
   async getRuntime(): Promise<ReminderRuntimeStateMap> {
     try {
       const data = await AsyncStorage.getItem(RUNTIME_KEY);
-      return data ? JSON.parse(data) : {};
+      return data ? normalizeRuntime(JSON.parse(data)) : {};
     } catch (e) {
       console.error('Error fetching engine runtime:', e);
       return {};

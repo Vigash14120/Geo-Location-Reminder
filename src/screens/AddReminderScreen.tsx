@@ -20,6 +20,7 @@ export default function AddReminderScreen() {
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [radius, setRadius] = useState(100);
+  const [dwellSeconds, setDwellSeconds] = useState(0);
   const [location, setLocation] = useState<GeoPoint>({
     latitude: route.params?.location?.latitude || 37.78825,
     longitude: route.params?.location?.longitude || -122.4324,
@@ -150,6 +151,7 @@ export default function AddReminderScreen() {
       isTriggered: false,
       timeConditions: timeEnabled ? { startTime: startTime.trim(), endTime: endTime.trim() } : undefined,
       altitudeThreshold: altitudeEnabled ? altitudeThreshold : undefined,
+      dwellSeconds,
       createdAt: Date.now(),
     };
 
@@ -302,6 +304,26 @@ export default function AddReminderScreen() {
               </View>
             </View>
           )}
+
+          <View style={styles.inputGroup}>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Dwell time: {dwellSeconds}s</Text>
+            </View>
+            <Slider
+              style={styles.slider}
+              minimumValue={0}
+              maximumValue={300}
+              step={5}
+              value={dwellSeconds}
+              onValueChange={setDwellSeconds}
+              minimumTrackTintColor="#2563eb"
+              maximumTrackTintColor="#d1d5db"
+              thumbTintColor="#2563eb"
+            />
+            <Text style={styles.helperText}>
+              Stay inside the geofence for this long after the accuracy checks pass. Zero triggers after the required consecutive readings.
+            </Text>
+          </View>
 
           <View style={styles.sectionHeader}>
             <Info size={18} color="#4b5563" />
@@ -501,6 +523,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
     marginBottom: 4,
+  },
+  helperText: {
+    fontSize: 13,
+    color: '#6b7280',
+    lineHeight: 18,
   },
   altitudeParams: {
     backgroundColor: '#f9fafb',

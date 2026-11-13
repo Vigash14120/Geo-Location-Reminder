@@ -67,6 +67,16 @@ export default function SettingsScreen() {
           onValueChange={(maxTriggersPerRun) => setSettings((current) => ({ ...current, maxTriggersPerRun }))}
           onSlidingComplete={(maxTriggersPerRun) => updateSettings({ maxTriggersPerRun })}
           minimumTrackTintColor="#2563eb" />
+        <Text style={styles.label}>Exit hysteresis: {settings.exitFactor.toFixed(2)}x radius</Text>
+        <Slider minimumValue={1.05} maximumValue={2} step={0.05} value={settings.exitFactor}
+          onValueChange={(exitFactor) => setSettings((current) => ({ ...current, exitFactor }))}
+          onSlidingComplete={(exitFactor) => updateSettings({ exitFactor })}
+          minimumTrackTintColor="#2563eb" />
+        <Text style={styles.label}>Required consecutive readings: {settings.requiredConsecutiveReadings}</Text>
+        <Slider minimumValue={1} maximumValue={5} step={1} value={settings.requiredConsecutiveReadings}
+          onValueChange={(requiredConsecutiveReadings) => setSettings((current) => ({ ...current, requiredConsecutiveReadings }))}
+          onSlidingComplete={(requiredConsecutiveReadings) => updateSettings({ requiredConsecutiveReadings })}
+          minimumTrackTintColor="#2563eb" />
       </View>
 
       <View style={styles.card}>
