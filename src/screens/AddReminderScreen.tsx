@@ -10,6 +10,7 @@ import { Reminder, GeoPoint } from '../types';
 import { MapPin, Info, Save, X, Search, LocateFixed, Thermometer } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { parseTimeToMinutes } from '../utils/geo';
+import { backgroundTaskService } from '../services/backgroundTasks';
 
 type AddReminderRouteProp = RouteProp<RootStackParamList, 'AddReminder'>;
 
@@ -156,6 +157,7 @@ export default function AddReminderScreen() {
     };
 
     await storageService.addReminder(newReminder);
+    await backgroundTaskService.refreshSamplingMode();
     navigation.goBack();
   };
 

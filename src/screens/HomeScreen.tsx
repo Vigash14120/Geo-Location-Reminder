@@ -8,7 +8,7 @@ import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { RootStackParamList, TabParamList } from '../navigation';
 import { Reminder } from '../types';
 import { storageService } from '../services/storage';
-import { evaluateRemindersAtLocation } from '../services/backgroundTasks';
+import { backgroundTaskService, evaluateRemindersAtLocation } from '../services/backgroundTasks';
 import { getHaversineDistance } from '../utils/geo';
 import { MapPin, Clock, Plus, Trash2, Map as MapIcon, Navigation } from 'lucide-react-native';
 
@@ -88,6 +88,7 @@ export default function HomeScreen() {
       isEnabled: !reminder.isEnabled,
     };
     await storageService.updateReminder(updated);
+    await backgroundTaskService.refreshSamplingMode();
     fetchReminders();
   };
 

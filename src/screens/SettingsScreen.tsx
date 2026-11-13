@@ -31,7 +31,16 @@ export default function SettingsScreen() {
   };
 
   const resetStats = async () => {
-    const next: EngineStats = { evaluations: 0, eligibleEvaluations: 0, triggered: 0, skipped: 0, rejectedSamples: 0 };
+    const next: EngineStats = {
+      evaluations: 0,
+      eligibleEvaluations: 0,
+      triggered: 0,
+      skipped: 0,
+      rejectedSamples: 0,
+      samplesProcessed: 0,
+      modeChanges: 0,
+      timeByMode: { idle: 0, far: 0, mid: 0, near: 0 },
+    };
     setStats(next);
     await storageService.saveStats(next);
   };
@@ -49,6 +58,19 @@ export default function SettingsScreen() {
           <View style={styles.flex}>
             <Text style={styles.label}>Decision engine</Text>
             <Text style={styles.hint}>Enable background evaluation and notifications</Text>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.statsHeader}>
+              <Activity size={20} color="#2563eb" />
+              <Text style={styles.sectionTitle}>Battery saver</Text>
+            </View>
+            <Text style={styles.hint}>Samples processed: {stats?.samplesProcessed ?? 0}</Text>
+            <Text style={styles.hint}>Sampling mode changes: {stats?.modeChanges ?? 0}</Text>
+            <Text style={styles.hint}>Current mode: {stats?.currentMode?.name ?? 'idle'}</Text>
+            <Text style={styles.hint}>
+              Time by mode: {Object.entries(stats?.timeByMode ?? {}).map(([mode, ms]) => `${mode} ${Math.round(ms / 1000)}s`).join(' | ')}
+            </Text>
           </View>
           <Switch value={settings.enabled} onValueChange={(enabled) => updateSettings({ enabled })} />
         </View>

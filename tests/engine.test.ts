@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_ENGINE_SETTINGS, runDecisionEngine } from '../src/engine';
+import { DEFAULT_ENGINE_SETTINGS, runDecisionEngine, selectSamplingMode } from '../src/engine';
 import { migrateReminderData } from '../src/services/storage';
 import { Reminder } from '../src/types';
 
@@ -19,7 +19,16 @@ const reminder: Reminder = {
 const baseInput = {
   reminders: [reminder],
   runtime: {},
-  stats: { evaluations: 0, eligibleEvaluations: 0, triggered: 0, skipped: 0, rejectedSamples: 0 },
+  stats: {
+    evaluations: 0,
+    eligibleEvaluations: 0,
+    triggered: 0,
+    skipped: 0,
+    rejectedSamples: 0,
+    samplesProcessed: 0,
+    modeChanges: 0,
+    timeByMode: { idle: 0, far: 0, mid: 0, near: 0 },
+  },
   settings: DEFAULT_ENGINE_SETTINGS,
 };
 
@@ -175,4 +184,22 @@ test('normalizes missing reminder fields during migration', () => {
 test('migration is idempotent for versioned data', () => {
   const raw = JSON.stringify({ schemaVersion: 2, reminders: [{ ...reminder, dwellSeconds: 5 }] });
   assert.deepEqual(migrateReminderData(raw), migrateReminderData(JSON.stringify(migrateReminderData(raw))));
+});
+
+test('selects idle, near, mid, and far sampling modes', () => {
+  assert.equal(selectSamplingMode({ latitude: 0, longitude: 0 }, [], undefined, 1000).name, 'idle');
+  const active = [{ ...reminder, radius: 100 }];
+  assert.equal(selectSamplingMode({ latitude: 0, longitude: 0.0005 }, active, undefined, 1000).name, 'near');
+  assert.equal(selectSamplingMode({ latitude: 0, longitude: 0.02 }, active, undefined, 1000).name, 'mid');
+  assert.equal(selectSamplingMode({ latitude: 0, longitude: 0.06 }, active, undefined, 1000).name, 'far');
+});
+
+test('sampling hysteresis keeps the current mode inside its margin', () => {
+  const active = [{ ...reminder, radius: 100 }];
+  const near = selectSamplingMode({ latitude: 0, longitude: 0 }, active, undefined, 1000);
+  const heldNear = selectSamplingMode({ latitude: 0, longitude: 0.0102 }, active, near.name, 1000);
+  assert.equal(heldNear.name, 'near');
+  const far = selectSamplingMode({ latitude: 0, longitude: 0.06 }, active, undefined, 1000);
+  const heldFar = selectSamplingMode({ latitude: 0, longitude: 0.045 }, active, far.name, 1000);
+  assert.equal(heldFar.name, 'far');
 });

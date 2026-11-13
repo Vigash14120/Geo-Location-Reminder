@@ -3,7 +3,9 @@ import * as Location from 'expo-location';
 import { storageService } from './storage';
 import { notificationService } from './notifications';
 import { runDecisionEngine } from '../engine';
+import { selectSamplingMode } from '../engine/adaptiveSampling';
 import { withSerializedWrites } from './mutex';
+import { EngineStats, SamplingMode } from '../types';
 
 export const LOCATION_TASK_NAME = 'background-location-task';
 
@@ -24,14 +26,18 @@ export async function evaluateRemindersAtLocation(coords: {
       storageService.getStats(),
       storageService.getSettings(),
     ]);
+    const now = coords.timestamp ?? Date.now();
     const result = runDecisionEngine({
       reminders,
       runtime,
       stats,
       settings,
       location: coords,
-      now: coords.timestamp ?? Date.now(),
+      now,
     });
+    const nextMode = selectSamplingMode(coords, reminders, stats.currentMode?.name, now);
+    const modeChanged = stats.currentMode?.name !== nextMode.name;
+    const modeElapsed = stats.modeChangedAt === undefined ? 0 : Math.max(0, now - stats.modeChangedAt);
     const successfulIds = new Set<string>();
     for (const action of result.actions) {
       const sent = await notificationService.sendReminderNotification(action.reminder);
@@ -56,36 +62,86 @@ export async function evaluateRemindersAtLocation(coords: {
         }
       }
     }
+    const nextStats: EngineStats = {
+      ...result.stats,
+      samplesProcessed: stats.samplesProcessed + 1,
+      modeChanges: stats.modeChanges + (modeChanged ? 1 : 0),
+      currentMode: nextMode,
+      modeChangedAt: modeChanged || stats.modeChangedAt === undefined ? now : stats.modeChangedAt,
+      timeByMode: {
+        ...stats.timeByMode,
+        ...(stats.currentMode
+          ? { [stats.currentMode.name]: stats.timeByMode[stats.currentMode.name] + modeElapsed }
+          : {}),
+      },
+    };
     await Promise.all([
       storageService.saveRuntime(nextRuntime),
       storageService.saveStats({
-        ...result.stats,
+        ...nextStats,
         triggered: result.stats.triggered - failedTriggers,
       }),
     ]);
+    if (modeChanged) await backgroundTaskService.applySamplingMode(nextMode);
   });
 }
 
 export const backgroundTaskService = {
+  async refreshSamplingMode(): Promise<void> {
+    await withSerializedWrites(async () => {
+      const [reminders, stats] = await Promise.all([
+        storageService.getReminders(),
+        storageService.getStats(),
+      ]);
+      let location: Location.LocationObject;
+      try {
+        location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      } catch {
+        return;
+      }
+      const now = location.timestamp || Date.now();
+      const mode = selectSamplingMode(location.coords, reminders, stats.currentMode?.name, now);
+      if (stats.currentMode?.name === mode.name) return;
+      await this.applySamplingMode(mode);
+      await storageService.saveStats({
+        ...stats,
+        currentMode: mode,
+        modeChanges: stats.modeChanges + 1,
+        modeChangedAt: now,
+      });
+    });
+  },
+
+  async applySamplingMode(mode: SamplingMode): Promise<void> {
+    const registered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
+    if (mode.name === 'idle') {
+      if (registered) await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      return;
+    }
+    if (registered) await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+    await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+      accuracy: mode.accuracy === 'high'
+        ? Location.Accuracy.High
+        : mode.accuracy === 'low'
+          ? Location.Accuracy.Low
+          : Location.Accuracy.Balanced,
+      timeInterval: mode.timeIntervalMs,
+      distanceInterval: mode.distanceIntervalM,
+      deferredUpdatesInterval: 30000,
+      deferredUpdatesDistance: 25,
+      showsBackgroundLocationIndicator: true,
+      foregroundService: {
+        notificationTitle: 'Geo-Reminder is Active',
+        notificationBody: 'Monitoring your location for reminders.',
+        notificationColor: '#2563eb',
+      },
+    });
+  },
+
   async registerBackgroundTask(): Promise<void> {
     try {
-      const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
-      if (!isRegistered) {
-        await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-          accuracy: Location.Accuracy.Balanced,
-          timeInterval: 10000, // 10 seconds
-          distanceInterval: 10, // 10 meters
-          deferredUpdatesInterval: 30000,
-          deferredUpdatesDistance: 25,
-          showsBackgroundLocationIndicator: true,
-          foregroundService: {
-            notificationTitle: 'Geo-Reminder is Active',
-            notificationBody: 'Monitoring your location for reminders.',
-            notificationColor: '#2563eb',
-          },
-        });
-        console.log('Background location task registered successfully');
-      }
+      await this.refreshSamplingMode();
+      console.log('Background location sampling mode refreshed');
     } catch (e) {
       console.error('Failed to register background location task:', e);
     }

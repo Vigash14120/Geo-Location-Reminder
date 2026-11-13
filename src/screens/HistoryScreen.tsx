@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, RefreshContr
 import { useFocusEffect } from '@react-navigation/native';
 import { Reminder } from '../types';
 import { storageService } from '../services/storage';
+import { backgroundTaskService } from '../services/backgroundTasks';
 import { MapPin, Clock, History as HistoryIcon, Trash2, CheckCircle2, RotateCcw } from 'lucide-react-native';
 
 export default function HistoryScreen() {
@@ -41,6 +42,7 @@ export default function HistoryScreen() {
 
   const reactivateReminder = async (item: Reminder) => {
     await storageService.reactivateReminder(item.id);
+    await backgroundTaskService.refreshSamplingMode();
     Alert.alert('Reminder Reactivated', `"${item.title}" is now active again.`);
     fetchHistory();
   };

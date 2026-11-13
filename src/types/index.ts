@@ -50,5 +50,19 @@ export interface EngineStats {
   triggered: number;
   skipped: number;
   rejectedSamples: number;
+  samplesProcessed: number;
+  modeChanges: number;
+  currentMode?: SamplingMode;
+  modeChangedAt?: number;
+  timeByMode: Record<SamplingModeName, number>;
   lastRunAt?: number;
+}
+
+export type SamplingModeName = 'idle' | 'far' | 'mid' | 'near';
+
+export interface SamplingMode {
+  name: SamplingModeName;
+  accuracy: 'low' | 'balanced' | 'high';
+  timeIntervalMs?: number;
+  distanceIntervalM?: number;
 }

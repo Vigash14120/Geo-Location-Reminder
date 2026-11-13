@@ -16,6 +16,9 @@ const EMPTY_STATS: EngineStats = {
   triggered: 0,
   skipped: 0,
   rejectedSamples: 0,
+  samplesProcessed: 0,
+  modeChanges: 0,
+  timeByMode: { idle: 0, far: 0, mid: 0, near: 0 },
 };
 
 export function normalizeReminder(
@@ -161,7 +164,13 @@ export const storageService = {
   async getStats(): Promise<EngineStats> {
     try {
       const data = await AsyncStorage.getItem(STATS_KEY);
-      return data ? { ...EMPTY_STATS, ...JSON.parse(data) } : EMPTY_STATS;
+      if (!data) return { ...EMPTY_STATS, timeByMode: { ...EMPTY_STATS.timeByMode } };
+      const parsed = JSON.parse(data) as Partial<EngineStats>;
+      return {
+        ...EMPTY_STATS,
+        ...parsed,
+        timeByMode: { ...EMPTY_STATS.timeByMode, ...(parsed.timeByMode ?? {}) },
+      };
     } catch (e) {
       console.error('Error fetching engine stats:', e);
       return EMPTY_STATS;
