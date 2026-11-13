@@ -3,6 +3,7 @@ import * as Location from 'expo-location';
 import { storageService } from './storage';
 import { notificationService } from './notifications';
 import { runDecisionEngine } from '../engine';
+import { withSerializedWrites } from './mutex';
 
 export const LOCATION_TASK_NAME = 'background-location-task';
 
@@ -16,18 +17,53 @@ export async function evaluateRemindersAtLocation(coords: {
   accuracy?: number | null;
   timestamp?: number;
 }): Promise<void> {
-  const [reminders, runtime, stats, settings] = await Promise.all([
-    storageService.getReminders(),
-    storageService.getRuntime(),
-    storageService.getStats(),
-    storageService.getSettings(),
-  ]);
-  const result = runDecisionEngine({ reminders, runtime, stats, settings, location: coords });
-  for (const action of result.actions) {
-    await notificationService.sendReminderNotification(action.reminder);
-    await storageService.updateReminder({ ...action.reminder, isTriggered: true });
-  }
-  await Promise.all([storageService.saveRuntime(result.runtime), storageService.saveStats(result.stats)]);
+  await withSerializedWrites(async () => {
+    const [reminders, runtime, stats, settings] = await Promise.all([
+      storageService.getReminders(),
+      storageService.getRuntime(),
+      storageService.getStats(),
+      storageService.getSettings(),
+    ]);
+    const result = runDecisionEngine({
+      reminders,
+      runtime,
+      stats,
+      settings,
+      location: coords,
+      now: coords.timestamp ?? Date.now(),
+    });
+    const successfulIds = new Set<string>();
+    for (const action of result.actions) {
+      const sent = await notificationService.sendReminderNotification(action.reminder);
+      if (sent) {
+        successfulIds.add(action.reminder.id);
+        await storageService.updateReminderUnsafe({ ...action.reminder, isTriggered: true });
+      }
+    }
+
+    const nextRuntime = { ...result.runtime };
+    let failedTriggers = 0;
+    for (const action of result.actions) {
+      if (!successfulIds.has(action.reminder.id)) {
+        failedTriggers += 1;
+        const state = nextRuntime[action.reminder.id];
+        if (state) {
+          nextRuntime[action.reminder.id] = {
+            ...state,
+            lastDecision: 'skipped',
+            lastTriggeredAt: undefined,
+          };
+        }
+      }
+    }
+    await Promise.all([
+      storageService.saveRuntime(nextRuntime),
+      storageService.saveStats({
+        ...result.stats,
+        triggered: result.stats.triggered - failedTriggers,
+      }),
+    ]);
+  });
 }
 
 export const backgroundTaskService = {

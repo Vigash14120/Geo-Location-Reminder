@@ -41,7 +41,7 @@ export const notificationService = {
     }
   },
 
-  async sendReminderNotification(reminder: Reminder): Promise<void> {
+  async sendReminderNotification(reminder: Reminder): Promise<boolean> {
     try {
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -53,8 +53,10 @@ export const notificationService = {
         },
         trigger: Platform.OS === 'android' ? { channelId: 'default' } : null,
       });
+      return true;
     } catch (e) {
       console.error('Failed to schedule reminder notification:', e);
+      return false;
     }
   },
 };

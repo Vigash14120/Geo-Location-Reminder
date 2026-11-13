@@ -22,14 +22,15 @@ export function applyDecisions(
     const inCooldown = previous?.lastTriggeredAt !== undefined &&
       now - previous.lastTriggeredAt < settings.cooldownMs;
     const shouldTrigger = evaluation.eligible && evaluation.score >= settings.minimumScore && !inCooldown;
+    const canTrigger = shouldTrigger && actions.length < settings.maxTriggersPerRun;
     nextRuntime[evaluation.reminder.id] = {
       ...previous,
       lastEvaluatedAt: now,
       lastDistanceMeters: evaluation.distanceMeters,
-      lastDecision: shouldTrigger ? 'triggered' : evaluation.eligible ? 'skipped' : 'ineligible',
-      ...(shouldTrigger ? { lastTriggeredAt: now } : {}),
+      lastDecision: canTrigger ? 'triggered' : evaluation.eligible ? 'skipped' : 'ineligible',
+      ...(canTrigger ? { lastTriggeredAt: now } : {}),
     };
-    if (shouldTrigger && actions.length < settings.maxTriggersPerRun) {
+    if (canTrigger) {
       actions.push({ type: 'trigger', reminder: evaluation.reminder, evaluation });
     } else {
       nextStats.skipped += 1;

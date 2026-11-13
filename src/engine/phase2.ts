@@ -6,11 +6,12 @@ export function evaluateReminder(
   reminder: Reminder,
   location: NormalizedLocation,
   accuracyLimit: number,
+  now: number,
 ): Evaluation {
   const distanceMeters = getHaversineDistance(location, reminder.location);
   const reasons: string[] = [];
   const timeEligible = !reminder.timeConditions ||
-    isWithinTimeRange(reminder.timeConditions.startTime, reminder.timeConditions.endTime);
+    isWithinTimeRange(reminder.timeConditions.startTime, reminder.timeConditions.endTime, now);
   const hasAltitudeConstraint = reminder.location.altitude !== undefined;
   const altitudeDistanceMeters = hasAltitudeConstraint && location.altitude !== undefined
     ? Math.abs(location.altitude - (reminder.location.altitude as number))
@@ -19,7 +20,8 @@ export function evaluateReminder(
     (altitudeDistanceMeters !== undefined &&
       altitudeDistanceMeters <= (reminder.altitudeThreshold ?? 10));
 
-  if (location.accuracy > accuracyLimit) reasons.push('location-inaccurate');
+  if (!Number.isFinite(location.accuracy)) reasons.push('location-accuracy-unknown');
+  else if (location.accuracy > accuracyLimit) reasons.push('location-inaccurate');
   if (distanceMeters > reminder.radius) reasons.push('outside-radius');
   if (!timeEligible) reasons.push('outside-time-window');
   if (!altitudeEligible) reasons.push('outside-altitude');

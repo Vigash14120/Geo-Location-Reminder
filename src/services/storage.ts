@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EngineSettings, EngineStats, Reminder, ReminderRuntimeStateMap } from '../types';
 import { DEFAULT_ENGINE_SETTINGS } from '../engine';
+import { withSerializedWrites } from './mutex';
 
 const STORAGE_KEY = '@geo_reminders_v2';
 const LEGACY_STORAGE_KEY = '@geo_reminders';
@@ -14,7 +15,37 @@ const EMPTY_STATS: EngineStats = {
   eligibleEvaluations: 0,
   triggered: 0,
   skipped: 0,
+  rejectedSamples: 0,
 };
+
+export function normalizeReminder(
+  input: Partial<Reminder> & Pick<Reminder, 'id' | 'title' | 'location' | 'radius' | 'createdAt'>,
+): Reminder {
+  return {
+    id: input.id,
+    title: input.title,
+    notes: input.notes ?? '',
+    location: input.location,
+    radius: input.radius,
+    isEnabled: input.isEnabled ?? true,
+    isTriggered: input.isTriggered ?? false,
+    dwellSeconds: input.dwellSeconds ?? 0,
+    createdAt: input.createdAt,
+    ...(input.timeConditions ? { timeConditions: input.timeConditions } : {}),
+    ...(input.altitudeThreshold !== undefined ? { altitudeThreshold: input.altitudeThreshold } : {}),
+    ...(input.dependsOnId ? { dependsOnId: input.dependsOnId } : {}),
+  };
+}
+
+export function migrateReminderData(raw: string | null): { schemaVersion: number; reminders: Reminder[] } {
+  if (!raw) return { schemaVersion: SCHEMA_VERSION, reminders: [] };
+  const parsed = JSON.parse(raw) as Reminder[] | { schemaVersion?: number; reminders?: Reminder[] };
+  const reminders = Array.isArray(parsed) ? parsed : parsed.reminders ?? [];
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    reminders: reminders.map((reminder) => normalizeReminder(reminder)),
+  };
+}
 
 async function migrate(): Promise<void> {
   const version = await AsyncStorage.getItem(`${STORAGE_KEY}:schema`);
@@ -22,7 +53,10 @@ async function migrate(): Promise<void> {
   const current = await AsyncStorage.getItem(STORAGE_KEY);
   if (!current) {
     const legacy = await AsyncStorage.getItem(LEGACY_STORAGE_KEY);
-    if (legacy) await AsyncStorage.setItem(STORAGE_KEY, legacy);
+    await AsyncStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(legacy ? migrateReminderData(legacy) : migrateReminderData(null)),
+    );
   }
   await AsyncStorage.setItem(`${STORAGE_KEY}:schema`, String(SCHEMA_VERSION));
 }
@@ -32,7 +66,9 @@ export const storageService = {
     try {
       await migrate();
       const data = await AsyncStorage.getItem(STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
+      const parsed = data ? JSON.parse(data) as Reminder[] | { reminders?: Reminder[] } : [];
+      const reminders = Array.isArray(parsed) ? parsed : parsed.reminders ?? [];
+      return reminders.map((reminder) => normalizeReminder(reminder));
     } catch (e) {
       console.error('Error fetching reminders from storage:', e);
       return [];
@@ -42,7 +78,10 @@ export const storageService = {
   async saveReminders(reminders: Reminder[]): Promise<void> {
     try {
       await migrate();
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(reminders));
+      await AsyncStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ schemaVersion: SCHEMA_VERSION, reminders: reminders.map(normalizeReminder) }),
+      );
     } catch (e) {
       console.error('Error saving reminders to storage:', e);
     }
@@ -54,6 +93,10 @@ export const storageService = {
   },
 
   async updateReminder(updatedReminder: Reminder): Promise<void> {
+    await withSerializedWrites(() => this.updateReminderUnsafe(updatedReminder));
+  },
+
+  async updateReminderUnsafe(updatedReminder: Reminder): Promise<void> {
     const reminders = await this.getReminders();
     const index = reminders.findIndex((r) => r.id === updatedReminder.id);
     if (index !== -1) {
@@ -84,6 +127,9 @@ export const storageService = {
         isEnabled: true,
       };
       await this.saveReminders(reminders);
+      const runtime = await this.getRuntime();
+      delete runtime[id];
+      await this.saveRuntime(runtime);
     }
   },
 

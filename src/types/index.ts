@@ -17,6 +17,8 @@ export interface Reminder {
     endTime: string;   // HH:mm
   };
   altitudeThreshold?: number; // Altitude match threshold in meters
+  dwellSeconds?: number;
+  dependsOnId?: string;
   createdAt: number;
 }
 
@@ -26,6 +28,8 @@ export interface EngineSettings {
   cooldownMs: number;
   maxTriggersPerRun: number;
   locationAccuracyMeters: number;
+  exitFactor: number;
+  requiredConsecutiveReadings: number;
 }
 
 export interface ReminderRuntimeState {
@@ -42,5 +46,6 @@ export interface EngineStats {
   eligibleEvaluations: number;
   triggered: number;
   skipped: number;
+  rejectedSamples: number;
   lastRunAt?: number;
 }

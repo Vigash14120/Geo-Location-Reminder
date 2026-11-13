@@ -31,7 +31,7 @@ export default function SettingsScreen() {
   };
 
   const resetStats = async () => {
-    const next: EngineStats = { evaluations: 0, eligibleEvaluations: 0, triggered: 0, skipped: 0 };
+    const next: EngineStats = { evaluations: 0, eligibleEvaluations: 0, triggered: 0, skipped: 0, rejectedSamples: 0 };
     setStats(next);
     await storageService.saveStats(next);
   };

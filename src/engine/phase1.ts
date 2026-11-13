@@ -1,6 +1,6 @@
 import { EngineLocation, NormalizedLocation } from './types';
 
-export function normalizeLocation(location: EngineLocation, now = Date.now()): NormalizedLocation | null {
+export function normalizeLocation(location: EngineLocation, now: number): NormalizedLocation | null {
   if (!Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
     return null;
   }

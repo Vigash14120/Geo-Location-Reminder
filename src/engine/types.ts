@@ -36,7 +36,7 @@ export interface EngineInput {
   runtime: ReminderRuntimeStateMap;
   settings: EngineSettings;
   stats: EngineStats;
-  now?: number;
+  now: number;
 }
 
 export interface EngineOutput {

@@ -41,7 +41,7 @@ export function parseTimeToMinutes(timeStr: string): number | null {
 /**
  * Checks if current time is within a time range (HH:mm format).
  */
-export function isWithinTimeRange(startTime: string, endTime: string): boolean {
+export function isWithinTimeRange(startTime: string, endTime: string, timestamp: number): boolean {
   const startTotalMinutes = parseTimeToMinutes(startTime);
   const endTotalMinutes = parseTimeToMinutes(endTime);
 
@@ -50,8 +50,14 @@ export function isWithinTimeRange(startTime: string, endTime: string): boolean {
     return true;
   }
 
-  const now = new Date();
-  const currentTime = now.getHours() * 60 + now.getMinutes();
+  const parts = new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(timestamp);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
+  const currentTime = hour * 60 + minute;
 
   if (startTotalMinutes <= endTotalMinutes) {
     return currentTime >= startTotalMinutes && currentTime <= endTotalMinutes;
