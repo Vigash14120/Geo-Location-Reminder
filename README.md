@@ -1,75 +1,85 @@
 # Geo-Location Reminder
 
-Geo-Location Reminder (GLR) is a React Native application built with Expo SDK 54. It turns location, time-window, altitude, and confidence checks into local reminders that can be evaluated from both the foreground UI and background location tasks.
+Geo-Location Reminder (GLR) is a React Native application built with Expo SDK 54. It evaluates location samples locally and sends reminders when a person reaches an eligible place.
 
 ## Features
 
-- **Interactive geofences**: Choose a location on the map, search for a place, and configure a radius from 50 m to 1,000 m.
-- **Altitude-aware reminders**: Optionally match a target altitude with a configurable tolerance.
-- **Time windows**: Restrict a reminder to a daily time range, including ranges that cross midnight.
-- **Background monitoring**: Use `expo-location` and `expo-task-manager` to evaluate reminders in the background and send local notifications.
-- **Smart decision engine**: Keep decision logic in pure TypeScript so it can be tested without a device.
-- **Runtime controls**: Configure the minimum confidence score, cooldown period, maximum triggers per run, and accepted location accuracy from Settings.
-- **Activity metrics**: Inspect evaluation count, eligible evaluations, triggers, skipped decisions, and the most recent engine run.
-- **History and reactivation**: Review triggered reminders and reactivate them when needed.
+- Interactive map-based reminder creation with configurable radius.
+- Optional altitude and tolerance matching.
+- Daily time windows, including overnight ranges such as `22:00-06:00`.
+- Background location monitoring and local notifications.
+- Accuracy filtering, enter/exit hysteresis, consecutive-reading protection, and configurable dwell time.
+- Chained reminders with cycle validation, locked children, and unlock-on-parent-trigger behavior.
+- Adaptive location sampling with `idle`, `near`, `mid`, and `far` modes.
+- History, reactivation, engine settings, and battery-saver metrics.
 
-## Smart decision engine
+## Screenshots
 
-The engine is split into four deterministic phases under `src/engine/`:
+![Active reminders](SS/Active%20remainders.jpeg)
+![Add reminder map](SS/WhatsApp%20Image%202026-04-17%20at%2010.17.24%20AM.jpeg)
+![Reminder notification](SS/Notification.jpeg)
+![Reminder details](SS/WhatsApp%20Image%202026-04-17%20at%2010.23.38%20AM.jpeg)
 
-1. **Normalization** validates coordinates and fills safe defaults for missing accuracy or timestamps.
-2. **Evaluation** checks distance, accuracy, altitude, time windows, enabled state, and whether a reminder has already triggered.
-3. **Ranking** filters by the configured minimum score and orders eligible reminders by confidence and distance.
-4. **Decision application** enforces cooldowns and per-run trigger limits while updating runtime state and aggregate statistics.
+## How it works
 
-The engine receives the current time as input when applying decisions. Expo-specific effects are kept in `src/services/backgroundTasks.ts`, which loads persisted data, invokes the engine, sends notifications for returned actions, and saves the updated runtime and statistics.
+The foreground and background adapters pass a timestamped location sample into the pure TypeScript engine:
 
-## Storage and migration
+```text
+location sample
+  -> normalization and accuracy filter
+  -> distance check with enter/exit hysteresis
+  -> consecutive-inside and dwell-time check
+  -> dependency/chain eligibility check
+  -> cooldown and per-run trigger limit
+  -> notification action and persisted runtime state
+```
 
-Reminder definitions are stored under `@geo_reminders_v2`. The storage service also keeps:
+Adaptive sampling runs alongside the decision pipeline. It finds the nearest active, eligible reminder and selects:
 
-- a schema marker at `@geo_reminders_v2:schema`;
-- per-reminder runtime state at `@geo_reminders_runtime`;
-- aggregate engine statistics at `@geo_reminders_stats`;
-- engine settings at `@geo_reminders_settings`.
+| Mode | Distance | Accuracy | Time interval | Distance interval |
+|---|---:|---|---:|---:|
+| `near` | below `max(1 km, 3 × radius)` | high | 5 s | 10 m |
+| `mid` | 1–5 km | balanced | 20 s | 100 m |
+| `far` | above 5 km | low | 60 s | 500 m |
+| `idle` | no active eligible reminders | stopped | — | — |
 
-Existing installations using the legacy `@geo_reminders` key are migrated automatically. Reminder data remains backward compatible because new storage keys and settings use defaults when they are absent.
+A 15% transition margin prevents mode flapping near thresholds. The adapter restarts location updates only when the selected mode changes and preserves the Android foreground-service notification configuration.
 
-## Tech stack
+## Technical decisions and trade-offs
 
-- [Expo](https://expo.dev/) SDK 54
-- [React Native](https://reactnative.dev/) 0.81
-- TypeScript 5.9
-- React Navigation
-- `react-native-maps`
-- `expo-location`
-- `expo-task-manager`
-- `expo-notifications`
-- `@react-native-async-storage/async-storage`
-- `expo-sensors` for future sensor integrations
+- `src/engine/` is pure TypeScript. It has no React, React Native, Expo, storage, or clock dependencies, so the decision behavior can run in deterministic tests.
+- The adapter supplies `now`; engine state is persisted separately from reminder definitions.
+- Poor-accuracy samples are rejected before they can change inside/outside state. Missing or invalid accuracy is reported separately as `location-accuracy-unknown`.
+- Hysteresis and dwell reduce false triggers at geofence edges, at the cost of slower triggering in some cases.
+- Adaptive sampling reduces update frequency when reminders are distant, while high-accuracy updates are reserved for nearby reminders.
+- Reminder writes are serialized to avoid foreground/background read-modify-write races.
+- Legacy `@geo_reminders` data is normalized and migrated idempotently to schema-versioned `@geo_reminders_v2`.
+- Deleting a parent reminder unlocks its children by removing their dependency. Reactivating a parent naturally re-locks untriggered children until the parent triggers again.
+
+## Known limitations
+
+- GPS accuracy varies by device, sky visibility, permissions, and operating system power policies.
+- Android OEM battery optimizers may stop or delay background location tasks; users may need to exempt the app from battery optimization.
+- Expo Go is suitable for development but does not provide the same background execution behavior as a standalone development or production build.
+- Background execution and notification delivery should be verified on a physical device.
 
 ## Getting started
 
 ### Prerequisites
 
-- Node.js 18 or newer
-- Expo Go on a physical iOS or Android device for location testing
+- Node.js 20 or newer
+- Expo Go or a development build on a physical iOS or Android device for location testing
 
-### Install
+### Install and run
 
 ```bash
 git clone https://github.com/Vigash14120/Geo-Location-Reminder.git
 cd Geo-Location-Reminder
-npm install
-```
-
-### Run
-
-```bash
+npm ci
 npx expo start
 ```
 
-Scan the QR code with Expo Go, or run one of the platform scripts:
+Platform scripts are also available:
 
 ```bash
 npm run android
@@ -77,15 +87,12 @@ npm run ios
 npm run web
 ```
 
-Background location behavior and notification delivery should be tested on a physical device. Expo Go and platform power-management policies can limit background execution.
-
 ## Validation
-
-Run the TypeScript check and pure engine tests with:
 
 ```bash
 npm run typecheck
 npm test
+npm run coverage
 ```
 
 ## Project structure
@@ -93,16 +100,15 @@ npm test
 ```text
 ├── App.tsx
 ├── app.json
-├── index.ts
 ├── src/
-│   ├── engine/              # Pure normalization, evaluation, ranking, and decisions
-│   ├── navigation/          # Stack and bottom-tab navigation
+│   ├── engine/              # Pure decision engine and adaptive sampling
+│   ├── navigation/          # Navigation configuration
 │   ├── screens/             # Home, Add Reminder, History, and Settings
-│   ├── services/            # Background task, notifications, and storage adapters
-│   ├── types/               # Reminder, engine settings, runtime, and stats types
-│   └── utils/               # Haversine distance and time-window helpers
-└── tests/
-    └── engine.test.ts       # Device-independent engine coverage
+│   ├── services/            # Location, notifications, storage, and adapters
+│   ├── types/               # Reminder, runtime, settings, and statistics types
+│   └── utils/               # Geographic and time-window helpers
+├── SS/                      # Application screenshots
+└── tests/                   # Device-independent engine tests
 ```
 
 ## License
