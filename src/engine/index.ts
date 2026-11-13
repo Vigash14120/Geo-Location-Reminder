@@ -5,6 +5,7 @@ import { applyDecisions } from './phase4';
 import { rankEligibleEvaluations } from './phase3';
 import { EngineInput, EngineOutput } from './types';
 import { ENGINE_CONFIG } from './config';
+import { isReminderEligibleByChain } from './chain';
 
 export const DEFAULT_ENGINE_SETTINGS: EngineSettings = {
   enabled: true,
@@ -28,7 +29,9 @@ export function runDecisionEngine(input: EngineInput): EngineOutput {
     };
   }
 
-  const evaluations = input.reminders.map((reminder) =>
+  const eligibleReminders = input.reminders.filter((reminder) =>
+    isReminderEligibleByChain(reminder, input.reminders));
+  const evaluations = eligibleReminders.map((reminder) =>
     evaluateReminder(reminder, location, settings.locationAccuracyMeters, input.now));
   if (!Number.isFinite(location.accuracy) || location.accuracy > settings.locationAccuracyMeters) {
     return {
@@ -55,3 +58,4 @@ export * from './phase2';
 export * from './phase3';
 export * from './phase4';
 export * from './adaptiveSampling';
+export * from './chain';

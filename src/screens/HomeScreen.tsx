@@ -10,7 +10,7 @@ import { Reminder } from '../types';
 import { storageService } from '../services/storage';
 import { backgroundTaskService, evaluateRemindersAtLocation } from '../services/backgroundTasks';
 import { getHaversineDistance } from '../utils/geo';
-import { MapPin, Clock, Plus, Trash2, Map as MapIcon, Navigation } from 'lucide-react-native';
+import { MapPin, Clock, Plus, Trash2, Map as MapIcon, Navigation, Lock } from 'lucide-react-native';
 
 type NavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<TabParamList, 'Home'>,
@@ -106,6 +106,7 @@ export default function HomeScreen() {
 
   const renderItem = ({ item }: { item: Reminder }) => {
     const distStr = getDistanceString(item.location);
+    const parent = item.dependsOnId ? reminders.find((candidate) => candidate.id === item.dependsOnId) : undefined;
 
     return (
       <View style={styles.card}>
@@ -113,6 +114,12 @@ export default function HomeScreen() {
           <View style={styles.titleContainer}>
             <Text style={styles.title}>{item.title}</Text>
             {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
+            {parent && !parent.isTriggered && (
+              <View style={styles.detailRow}>
+                <Lock size={14} color="#6b7280" />
+                <Text style={styles.detailText}>Starts after {parent.title}</Text>
+              </View>
+            )}
           </View>
           <TouchableOpacity 
             style={styles.deleteBtn}

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_ENGINE_SETTINGS, runDecisionEngine, selectSamplingMode } from '../src/engine';
 import { migrateReminderData } from '../src/services/storage';
+import { detectCycle, getReminderStatus } from '../src/engine/chain';
 import { Reminder } from '../src/types';
 
 const reminder: Reminder = {
@@ -202,4 +203,18 @@ test('sampling hysteresis keeps the current mode inside its margin', () => {
   const far = selectSamplingMode({ latitude: 0, longitude: 0.06 }, active, undefined, 1000);
   const heldFar = selectSamplingMode({ latitude: 0, longitude: 0.045 }, active, far.name, 1000);
   assert.equal(heldFar.name, 'far');
+});
+
+test('locks a child until its parent triggers', () => {
+  const parent = { ...reminder, id: 'parent' };
+  const child = { ...reminder, id: 'child', dependsOnId: 'parent' };
+  assert.equal(getReminderStatus(child, [parent, child]), 'locked');
+  assert.equal(getReminderStatus(child, [{ ...parent, isTriggered: true }, child]), 'active');
+});
+
+test('detects self-dependencies and cycles', () => {
+  assert.equal(detectCycle([{ ...reminder, dependsOnId: 'nearby' }], 'nearby'), true);
+  const a = { ...reminder, id: 'a', dependsOnId: 'b' };
+  const b = { ...reminder, id: 'b', dependsOnId: 'a' };
+  assert.equal(detectCycle([a, b], 'a'), true);
 });

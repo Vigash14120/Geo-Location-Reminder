@@ -1,6 +1,7 @@
 import { getHaversineDistance, isWithinTimeRange } from '../utils/geo';
 import { SamplingMode, SamplingModeName, Reminder } from '../types';
 import { ENGINE_CONFIG } from './config';
+import { isReminderEligibleByChain } from './chain';
 
 export interface SamplingLocation {
   latitude: number;
@@ -16,6 +17,7 @@ export function selectSamplingMode(
   const eligible = reminders.filter((reminder) =>
     reminder.isEnabled &&
     !reminder.isTriggered &&
+    isReminderEligibleByChain(reminder, reminders) &&
     (!reminder.timeConditions ||
       isWithinTimeRange(reminder.timeConditions.startTime, reminder.timeConditions.endTime, now)));
 

@@ -22,6 +22,8 @@ export default function AddReminderScreen() {
   const [notes, setNotes] = useState('');
   const [radius, setRadius] = useState(100);
   const [dwellSeconds, setDwellSeconds] = useState(0);
+  const [existingReminders, setExistingReminders] = useState<Reminder[]>([]);
+  const [dependsOnId, setDependsOnId] = useState<string | undefined>();
   const [location, setLocation] = useState<GeoPoint>({
     latitude: route.params?.location?.latitude || 37.78825,
     longitude: route.params?.location?.longitude || -122.4324,
@@ -43,6 +45,7 @@ export default function AddReminderScreen() {
   });
 
   useEffect(() => {
+    storageService.getReminders().then(setExistingReminders);
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
@@ -153,6 +156,7 @@ export default function AddReminderScreen() {
       timeConditions: timeEnabled ? { startTime: startTime.trim(), endTime: endTime.trim() } : undefined,
       altitudeThreshold: altitudeEnabled ? altitudeThreshold : undefined,
       dwellSeconds,
+      dependsOnId,
       createdAt: Date.now(),
     };
 
@@ -238,6 +242,27 @@ export default function AddReminderScreen() {
               onChangeText={setTitle}
             />
           </View>
+
+          {existingReminders.length > 0 && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Start after (Optional)</Text>
+              <TouchableOpacity
+                style={[styles.choiceButton, !dependsOnId && styles.choiceButtonSelected]}
+                onPress={() => setDependsOnId(undefined)}
+              >
+                <Text style={styles.choiceText}>Start immediately</Text>
+              </TouchableOpacity>
+              {existingReminders.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.choiceButton, dependsOnId === item.id && styles.choiceButtonSelected]}
+                  onPress={() => setDependsOnId(item.id)}
+                >
+                  <Text style={styles.choiceText}>{item.title}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Notes (Optional)</Text>
@@ -530,6 +555,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
     lineHeight: 18,
+  },
+  choiceButton: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+  },
+  choiceButtonSelected: {
+    borderColor: '#2563eb',
+    backgroundColor: '#eff6ff',
+  },
+  choiceText: {
+    color: '#1f2937',
+    fontSize: 14,
   },
   altitudeParams: {
     backgroundColor: '#f9fafb',

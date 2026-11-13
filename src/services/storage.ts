@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EngineSettings, EngineStats, Reminder, ReminderRuntimeStateMap } from '../types';
 import { DEFAULT_ENGINE_SETTINGS } from '../engine';
 import { withSerializedWrites } from './mutex';
+import { validateDependencies } from '../engine/chain';
 
 const STORAGE_KEY = '@geo_reminders_v2';
 const LEGACY_STORAGE_KEY = '@geo_reminders';
@@ -103,6 +104,7 @@ export const storageService = {
 
   async addReminder(reminder: Reminder): Promise<void> {
     const reminders = await this.getReminders();
+    validateDependencies([reminder, ...reminders]);
     await this.saveReminders([reminder, ...reminders]);
   },
 
@@ -114,14 +116,18 @@ export const storageService = {
     const reminders = await this.getReminders();
     const index = reminders.findIndex((r) => r.id === updatedReminder.id);
     if (index !== -1) {
-      reminders[index] = updatedReminder;
-      await this.saveReminders(reminders);
+      const nextReminders = reminders.map((reminder) =>
+        reminder.id === updatedReminder.id ? updatedReminder : reminder);
+      validateDependencies(nextReminders);
+      await this.saveReminders(nextReminders);
     }
   },
 
   async deleteReminder(id: string): Promise<void> {
     const reminders = await this.getReminders();
-    const updated = reminders.filter((r) => r.id !== id);
+    const updated = reminders
+      .filter((r) => r.id !== id)
+      .map((r) => r.dependsOnId === id ? { ...r, dependsOnId: undefined } : r);
     await this.saveReminders(updated);
   },
 
